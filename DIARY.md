@@ -10,7 +10,7 @@ Newest entries go at the top. Each entry has:
 
 ---
 
-## v2.1: Hidden albums, search, full album menu (2026-11-24, uncommitted)
+## v2.1: Hidden albums, search, full album menu (2026-11-24, `41ca19f`)
 
 ### What
 - **Hidden albums**, modelled on WhatsApp's Chat Lock: an album can be hidden behind a secret code. It vanishes from Photos, Albums, Favorites, search, slideshows and Trash. Typing the code into the search box and pressing Enter reveals a **Hidden albums** page.
