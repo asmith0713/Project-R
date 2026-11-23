@@ -1,24 +1,33 @@
 # Private Gallery
 
-A small web app that runs on a Raspberry Pi and shows your photos and videos in a browser. It is protected by one secret key and works only on your home wifi.
+A web app that runs on a Raspberry Pi and shows your photos and videos in a browser, laid out like Google Photos. It is protected by one secret key and works only on your home wifi. It fits phones, tablets, laptops and big screens, and follows your device's light or dark mode.
 
 ## What it does
 
-- Shows your photo folders (sub-folders included) as a grid, with a full-screen viewer
-- Plays videos and opens iPhone HEIC photos
-- Shuffle slideshow of everything in a folder
-- Upload photos and videos from your phone, and create folders
+- **Photos:** everything in one timeline, newest first, grouped by the day each photo was taken, with a scrubber on the right to jump through the years
+- **Albums:** your folders (sub-folders included) with cover pictures
+- **Viewer:** swipe between photos, pinch or double-tap to zoom, swipe down to close, and see the date, camera and location
+- Plays videos and opens iPhone HEIC and RAW (DNG) photos
+- **Favorites:** heart a photo to find it quickly
+- **Manage:** select many photos to move, download or delete them. Deleted items wait in **Trash** for 30 days.
+- Upload photos and videos from your phone or by dragging them onto the page, and create, rename and delete albums
+- Shuffle slideshow of an album or everything
+- Add it to your phone's home screen like an app
 - Asks for a secret key before showing anything, including thumbnails and videos
 
 ## What's in the folder
 
 | Item | What it is |
 |---|---|
-| `app.py` | The whole app |
+| `app.py` | Starts the app |
+| `gallery/` | The server side (Python) |
+| `web/` | The pages you see (Svelte). They have to be built once with `npm`. |
 | `requirements.txt` | The Python packages it needs |
 | `photos/` | Your photos and videos go here (created on first run) |
 | `.auth.json` | Your key, stored as a hash (created by `setpass`) |
-| `.cache/` | Thumbnails and JPEG copies of HEIC photos (safe to delete) |
+| `.favorites.json` | Which photos you hearted |
+| `.cache/` | Thumbnails, JPEG copies of HEIC/RAW photos, and the photo index (safe to delete) |
+| `photos/.trash/` | Deleted items, kept for 30 days |
 
 ## Set it up (once)
 
@@ -30,12 +39,14 @@ You need a Raspberry Pi with Raspberry Pi OS and Python 3. Everything below runs
 ssh yourusername@raspberrypi.local
 ```
 
-**2. Install Python's tools**
+**2. Install the tools it needs**
 
 ```
 sudo apt update
-sudo apt install -y python3 python3-venv python3-pip
+sudo apt install -y python3 python3-venv python3-pip nodejs npm ffmpeg
 ```
+
+`ffmpeg` makes the video thumbnails, and `nodejs`/`npm` build the pages.
 
 **3. Copy this folder to the Pi** (run this in a new Terminal window on your Mac)
 
@@ -52,6 +63,7 @@ cd ~/private-gallery
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+cd web && npm install && npm run build && cd ..
 ```
 
 **5. Choose your secret key**
@@ -78,6 +90,8 @@ rsync -av ~/Desktop/MyPhotos/ yourusername@raspberrypi.local:~/private-gallery/p
 python3 app.py
 ```
 
+The first time, it looks through all your photos to read their dates. That takes about a minute per thousand photos, and the page fills in by itself. To get thumbnails ready ahead of time as well, run `python3 app.py warm` once.
+
 ## Open it
 
 On any phone or laptop connected to your home wifi, open:
@@ -92,11 +106,16 @@ Enter your secret key. Your login lasts 12 hours. Press **Lock** when you're don
 
 ## Using it
 
-- **Browse:** tap a folder at the top to go in, and use the path at the top left to go back.
-- **View:** tap a photo or video to open it. Swipe or use the arrow keys to move, and press Esc to close.
-- **Slideshow:** press **Shuffle slideshow** to play everything in the current folder and its sub-folders in random order. Photos stay on screen for 6 seconds, and videos play to the end.
-- **Upload:** open the folder you want, press **Upload**, and choose photos or videos. You can pick many at once. A counter shows progress, and the page refreshes when it's done.
-- **New folder:** press **New folder** and type a name. It's created inside the folder you're in.
+- **Photos** shows everything by date. Drag the scrubber on the right edge (or scroll) to jump back in time.
+- **Albums** shows your folders. Tap one to open it, and use the path at the top to go back.
+- **View:** tap a photo or video. Swipe left or right (or use the arrow keys) to move, pinch or double-tap to zoom, and swipe down (or press Esc) to close. The ⓘ button shows the date, file, camera and a map link if the photo has a location.
+- **Favorite:** tap the heart in the viewer (or press F). Hearted photos appear under **Favorites**.
+- **Select:** on a phone, press and hold a photo, then tap more. On a computer, hover and click the circle, and Shift-click to select a range. The bar at the top lets you favorite, move to an album, download or delete them.
+- **Delete:** items go to **Trash**, and you can undo straight away or restore them from Trash for 30 days. After that they're gone for good.
+- **Slideshow:** in an album, press **Slideshow** to play everything in it (and its sub-albums) in random order. Photos stay for 5 seconds, and videos play to the end.
+- **Upload:** open the album you want, press **Upload** and pick photos or videos. On a computer you can also drag files onto the page. A panel shows progress.
+- **Albums:** use **New album** on the Albums page, or the ⋮ menu inside an album to make one inside it, rename it, or delete it (only when it's empty).
+- **On your phone's home screen:** on iPhone, open the gallery in Safari, tap Share, then **Add to Home Screen**. It then opens full-screen like an app.
 
 Uploads never overwrite anything. If a file with the same name exists, the new one gets `_1` added to its name.
 
@@ -151,7 +170,9 @@ rsync -av yourusername@raspberrypi.local:~/private-gallery/photos/ ~/Desktop/gal
 
 **Change your secret key.** Stop the app (or `sudo systemctl stop gallery`), run `python3 app.py setpass` again, then start it. Everyone gets logged out.
 
-**Update the app.** Copy the new `app.py` over the old one and restart it. Your key and photos stay as they are.
+**Update the app.** Copy the new files over the old ones, rebuild the pages with `cd web && npm install && npm run build`, then restart it. Your key, favorites and photos stay as they are.
+
+**Added lots of photos with rsync?** Run `python3 app.py warm` (with the venv active) so their thumbnails are ready before you browse. Add `--views` to also prepare full-screen copies of HEIC and RAW photos.
 
 **Use another photo folder or port.** Set these before starting:
 
@@ -168,8 +189,11 @@ For the service, add `Environment="PHOTO_DIR=/path/to/photos"` under `[Service]`
 - Anyone who can log in to the Pi itself, or take out its memory card, can read the photos. Set a password on the Pi.
 - Your browser history keeps the address. Use a private window if that matters.
 - The lockout counter resets if the app restarts.
+- Deleted items stay in Trash (a hidden `.trash` folder next to your photos) for 30 days.
 
 ## Troubleshooting
+
+**The page says "The app isn't built yet".** In the app folder, run `cd web && npm install && npm run build`, then reload.
 
 **The page won't load.** Check that your phone is on the same wifi as the Pi, that the app is running (`sudo systemctl status gallery`), and that the address is right. Try the IP address if `raspberrypi.local` fails.
 
@@ -183,4 +207,4 @@ For the service, add `Environment="PHOTO_DIR=/path/to/photos"` under `[Service]`
 
 **The first look at a folder is slow.** The Pi is making thumbnails. Later visits are fast because they're cached.
 
-**Photos aren't showing up.** The app skips hidden files (names starting with a dot) and anything that isn't a photo or video. Supported types are JPG, PNG, GIF, WebP, HEIC, TIFF, MP4, MOV, M4V, and WebM.
+**Photos aren't showing up.** The app skips hidden files (names starting with a dot) and anything that isn't a photo or video. Supported types are JPG, PNG, GIF, WebP, HEIC, TIFF, DNG, MP4, MOV, M4V, and WebM. New photos copied onto the drive show up within about 10 seconds of the next page load.
