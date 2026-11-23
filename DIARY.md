@@ -10,7 +10,7 @@ Newest entries go at the top. Each entry has:
 
 ---
 
-## v2.4: Free remote access with Tailscale (2026-11-24)
+## v2.4: Free remote access with Tailscale (2026-11-24, `471c7da`)
 
 ### What
 - **Private access from anywhere:** `http://asmithpi:8080`, only for your own devices signed in to Tailscale.
@@ -40,7 +40,7 @@ Newest entries go at the top. Each entry has:
 
 ---
 
-## v2.3: Works behind Cloudflare Tunnel (2026-11-24)
+## v2.3: Works behind Cloudflare Tunnel (2026-11-24, `471c7da`)
 
 ### What
 The gallery can be opened from outside the home through `cloudflared tunnel --url http://127.0.0.1:8080`. The first attempt used `--url localhost:80`, which failed: nothing listens on 80, and `localhost` resolved to `::1` while waitress listens on IPv4 only.
@@ -64,7 +64,7 @@ With the test client: a stranger is locked out after 5 tries while another visit
 
 ---
 
-## v2.2: Locks when the tab or browser closes (2026-11-24)
+## v2.2: Locks when the tab or browser closes (2026-11-24, `471c7da`)
 
 ### What
 - **What locks the gallery:**
@@ -98,7 +98,7 @@ With the test client: a stranger is locked out after 5 tries while another visit
 
 ---
 
-## v2.1.1: Service waits for the pendrive (2026-11-24)
+## v2.1.1: Service waits for the pendrive (2026-11-24, `19151de`)
 
 ### What
 The gallery no longer starts when the USB pendrive isn't mounted. It keeps retrying every 10 seconds and starts as soon as the drive is there.
