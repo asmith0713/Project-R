@@ -33,6 +33,11 @@ Newest entries go at the top. Each entry has:
 - **Office-managed PC:** company TLS inspection or monitoring software could see everything. Use a private window there, and rely on lock-on-close.
 - Hidden albums are never cached by the browser.
 
+### Follow-up: old Cloudflare quick tunnel disabled
+- Found `cloudflared-quick.service`, enabled at boot since before this work. It published a random `trycloudflare.com` address pointing at `192.168.88.6:8080`, the Pi's old DHCP address (the Pi is now `.7`), so it was dead.
+- **Why it was disabled (`systemctl disable --now`):** another device getting `.6` would have been published to the internet. If the Pi got `.6` back, the gallery would go public with a shared lockout, because the tunnel connects over the LAN address rather than localhost. Tailscale replaces it.
+- The unit file is kept, so it can be re-enabled if ever wanted.
+
 ### Open
 - The public link exposes the sign-in page to the internet, and the 6-character key minimum is weak for that. Set a longer key.
 - Uploads through Funnel weren't tested with very large files.
