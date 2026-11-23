@@ -17,6 +17,7 @@ export const app = $state({
   context: [], // items of the page on screen; the viewer pages through these
   slideshow: null, // { items } while a shuffled slideshow runs
   lastViewed: null, // path the viewer closed on, so the grid can scroll to it
+  search: '', // kept out of the URL on purpose: the secret code is typed here
 })
 
 export const favs = new SvelteSet()
@@ -90,6 +91,82 @@ export function ask(dialog) {
   return new Promise((resolve) => {
     app.dialog = { ...dialog, resolve: (v) => ((app.dialog = null), resolve(v)) }
   })
+}
+
+// ---------- hidden albums ----------
+// Albums hidden behind a secret code. The code is typed into the search box; the
+// server decides, so nothing about hidden albums ever reaches the page while locked.
+
+export async function tryUnlock(code) {
+  if (code.trim().length < 4) return false
+  try {
+    const r = await post('/api/hidden/unlock', { code })
+    return r.ok
+  } catch {
+    return false
+  }
+}
+
+export async function lockHidden() {
+  try {
+    await post('/api/hidden/lock')
+  } catch {}
+  app.version++
+}
+
+async function askNewCode(title) {
+  const a = await ask({ kind: 'prompt', title, body: 'To open hidden albums later, type this code into the search box and press Enter.', placeholder: 'At least 4 characters', password: true, confirm: 'Next' })
+  if (!a) return null
+  if (a.length < 4) return (fail({ message: 'Use at least 4 characters' }), null)
+  const b = await ask({ kind: 'prompt', title: 'Type it again', password: true, confirm: 'Save code' })
+  if (b === null) return null
+  if (a !== b) return (fail({ message: "The two codes didn't match" }), null)
+  return a
+}
+
+export async function hideAlbum(path) {
+  try {
+    let s = await api('/api/hidden')
+    if (!s.configured) {
+      const code = await askNewCode('Create a secret code')
+      if (!code) return false
+      await post('/api/hidden/code', { code })
+    } else if (!s.unlocked) {
+      const code = await ask({ kind: 'prompt', title: 'Enter your secret code', password: true, confirm: 'Continue' })
+      if (!code) return false
+      if (!(await tryUnlock(code))) return (fail({ message: "That code didn't work" }), false)
+    }
+    await post('/api/hidden/hide', { path })
+    changed()
+    toast('Album hidden. To find it, type your secret code in search.')
+    return true
+  } catch (e) {
+    fail(e)
+    return false
+  }
+}
+
+export async function unhideAlbum(path) {
+  try {
+    await post('/api/hidden/unhide', { path })
+    changed()
+    toast('Album is visible again')
+    return true
+  } catch (e) {
+    fail(e)
+    return false
+  }
+}
+
+export async function changeCode() {
+  const code = await askNewCode('New secret code')
+  if (!code) return
+  try {
+    await post('/api/hidden/code', { code })
+    toast('Secret code changed')
+  } catch (e) {
+    fail(e)
+  }
 }
 
 // ---------- actions ----------
@@ -201,22 +278,45 @@ export async function renameAlbum(path) {
   }
 }
 
-export async function deleteAlbum(path) {
+export async function deleteAlbum(path, count = 0) {
+  const name = path.split('/').pop()
   const ok = await ask({
     kind: 'confirm',
-    title: `Delete “${path.split('/').pop()}”?`,
-    body: 'The album is empty, so nothing else is deleted.',
+    title: `Delete “${name}”?`,
+    body: count
+      ? `Its ${plural(count, 'item')} (sub-albums included) move to Trash, where you can restore them for 30 days.`
+      : 'The album is empty, so nothing else is deleted.',
     confirm: 'Delete album',
     danger: true,
   })
   if (!ok) return false
   try {
-    await post('/api/rmdir', { path })
+    const r = await post('/api/rmdir', { path })
     changed()
+    toast(r.kept ? `Moved ${plural(r.ids.length, 'item')} to trash. The folder was kept because it has other files.` : `Deleted “${name}”`, {
+      action: r.ids.length ? 'Undo' : undefined,
+      onAction: () => restore(r.ids),
+    })
     return true
   } catch (e) {
     fail(e)
     return false
+  }
+}
+
+export async function moveAlbum(path) {
+  const name = path.split('/').pop()
+  const parent = path.split('/').slice(0, -1).join('/')
+  const dest = await ask({ kind: 'album', title: `Move “${name}” into…`, exclude: path, current: parent, top: 'Top level (not inside an album)' })
+  if (dest === null || dest === undefined || dest === parent) return null
+  try {
+    const r = await post('/api/move-album', { path, dest })
+    changed()
+    toast(`Moved “${name}” into ${dest ? `“${dest.split('/').pop()}”` : 'the top level'}`)
+    return r.path
+  } catch (e) {
+    fail(e)
+    return null
   }
 }
 

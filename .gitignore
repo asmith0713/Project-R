@@ -2,6 +2,7 @@ venv/
 .cache/
 .auth.json
 .favorites.json
+.hidden.json
 photos/
 web/node_modules/
 web/dist/

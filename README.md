@@ -10,7 +10,10 @@ A web app that runs on a Raspberry Pi and shows your photos and videos in a brow
 - Plays videos and opens iPhone HEIC and RAW (DNG) photos
 - **Favorites:** heart a photo to find it quickly
 - **Manage:** select many photos to move, download or delete them. Deleted items wait in **Trash** for 30 days.
-- Upload photos and videos from your phone or by dragging them onto the page, and create, rename and delete albums
+- Upload photos and videos from your phone or by dragging them onto the page
+- **Album menu (⋮):** rename, move into another album, hide or delete any album (sharing is coming later)
+- **Hidden albums:** hide an album behind a secret code, like WhatsApp's locked chats. It disappears everywhere until you type the code into search.
+- **Search** by file name, album, month or year
 - Shuffle slideshow of an album or everything
 - Add it to your phone's home screen like an app
 - Asks for a secret key before showing anything, including thumbnails and videos
@@ -26,6 +29,7 @@ A web app that runs on a Raspberry Pi and shows your photos and videos in a brow
 | `photos/` | Your photos and videos go here (created on first run) |
 | `.auth.json` | Your key, stored as a hash (created by `setpass`) |
 | `.favorites.json` | Which photos you hearted |
+| `.hidden.json` | Which albums are hidden, and your secret code (stored as a hash) |
 | `.cache/` | Thumbnails, JPEG copies of HEIC/RAW photos, and the photo index (safe to delete) |
 | `photos/.trash/` | Deleted items, kept for 30 days |
 
@@ -114,7 +118,18 @@ Enter your secret key. Your login lasts 12 hours. Press **Lock** when you're don
 - **Delete:** items go to **Trash**, and you can undo straight away or restore them from Trash for 30 days. After that they're gone for good.
 - **Slideshow:** in an album, press **Slideshow** to play everything in it (and its sub-albums) in random order. Photos stay for 5 seconds, and videos play to the end.
 - **Upload:** open the album you want, press **Upload** and pick photos or videos. On a computer you can also drag files onto the page. A panel shows progress.
-- **Albums:** use **New album** on the Albums page, or the ⋮ menu inside an album to make one inside it, rename it, or delete it (only when it's empty).
+- **Albums:** use **New album** on the Albums page. Every album has a ⋮ menu (on its cover, and at the top when it's open):
+  - **Rename**
+  - **Move into album…:** puts the whole album, with everything in it, inside another album or back at the top level
+  - **Hide album:** see below
+  - **Delete album:** its photos and videos go to Trash (sub-albums included), and you can undo or restore them for 30 days. Other kinds of files inside are never deleted.
+  - **Share:** coming later
+- **Search:** type in the search box at the top (the 🔍 icon on phones). It finds photos by file name, album, month ("june") or year ("2024").
+- **Hidden albums:**
+  - **Hide:** open an album's ⋮ menu and choose **Hide album**. The first time, you choose a secret code (at least 4 characters). The album and its photos then disappear from Photos, Albums, Favorites, search, slideshows and Trash.
+  - **Open:** type your secret code into the search box and press Enter (Search on a phone keyboard). Your hidden albums appear.
+  - **Hide again:** press **Hide again**. They also hide again on their own when you press Lock or after 15 minutes without using them.
+  - **Change the code:** use the ⋮ menu on the Hidden albums page. If you forget it, run `python3 app.py sethidden` on the Pi to set a new one. Hidden albums stay hidden.
 - **On your phone's home screen:** on iPhone, open the gallery in Safari, tap Share, then **Add to Home Screen**. It then opens full-screen like an app.
 
 Uploads never overwrite anything. If a file with the same name exists, the new one gets `_1` added to its name.
@@ -190,6 +205,7 @@ For the service, add `Environment="PHOTO_DIR=/path/to/photos"` under `[Service]`
 - Your browser history keeps the address. Use a private window if that matters.
 - The lockout counter resets if the app restarts.
 - Deleted items stay in Trash (a hidden `.trash` folder next to your photos) for 30 days.
+- Hidden albums are hidden inside the gallery only, and the server refuses to show them until the code is entered. Anyone who logs in to the Pi or reads the drive directly can still see the folders. After 10 wrong codes in 10 minutes, the device can't open hidden albums for a while.
 
 ## Troubleshooting
 

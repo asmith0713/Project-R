@@ -14,6 +14,9 @@
   import Albums from './views/Albums.svelte'
   import Favorites from './views/Favorites.svelte'
   import Trash from './views/Trash.svelte'
+  import Search from './views/Search.svelte'
+  import Hidden from './views/Hidden.svelte'
+  import SearchBox from './components/SearchBox.svelte'
 
   const nav = [
     { href: '/', label: 'Photos', icon: 'photos' },
@@ -27,6 +30,8 @@
     : route.path === '/albums' || route.path.startsWith('/albums/') ? 'albums'
     : route.path === '/favorites' ? 'favorites'
     : route.path === '/trash' ? 'trash'
+    : route.path === '/search' ? 'search'
+    : route.path === '/hidden' ? 'hidden'
     : 'other',
   )
   const albumPath = $derived(page === 'albums' ? route.path.slice('/albums/'.length) : '')
@@ -37,7 +42,8 @@
   const showViewer = $derived(!!route.photo && viewerItems.some((i) => i.path === route.photo))
 
   // selection bar acts on these
-  const byPath = $derived(new Map((app.library || []).map((i) => [i.path, i])))
+  // hidden-album items aren't in the library, so also look in what's on screen
+  const byPath = $derived(new Map([...(app.library || []), ...app.context].map((i) => [i.path, i])))
   const selected = $derived([...selection].map((p) => byPath.get(p)).filter(Boolean))
   const allFav = $derived(selected.length > 0 && selected.every((i) => favs.has(i.path)))
 
@@ -48,6 +54,9 @@
   $effect(() => {
     page // leaving a page drops its selection
     selection.clear()
+  })
+  $effect(() => {
+    if (page !== 'search') app.search = ''
   })
   $effect(() => {
     if (page === 'other' && app.authed) navigate('/', { replace: true })
@@ -113,6 +122,7 @@
         </div>
       {:else}
         <a class="brand mobile" href="/"><img src="/icon.svg" alt="" width="28" height="28" /> <span>Gallery</span></a>
+        <SearchBox />
         <div class="spacer"></div>
         {#if page !== 'trash'}
           <button class="btn upload" onclick={() => pick()}>
@@ -132,6 +142,10 @@
         <Favorites />
       {:else if page === 'trash'}
         <Trash />
+      {:else if page === 'search'}
+        <Search />
+      {:else if page === 'hidden'}
+        <Hidden />
       {/if}
     </main>
 

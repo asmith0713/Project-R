@@ -9,6 +9,7 @@ PORT = int(os.environ.get("PORT", 8080))
 CACHE = BASE / ".cache"            # thumbnails, converted photos, library index (safe to delete)
 AUTH = Path(os.environ.get("GALLERY_AUTH", BASE / ".auth.json"))  # hash + session secret (`app.py setpass`)
 FAVORITES = Path(os.environ.get("GALLERY_FAVORITES", BASE / ".favorites.json"))
+HIDDEN = Path(os.environ.get("GALLERY_HIDDEN", BASE / ".hidden.json"))  # hidden albums + secret code
 DIST = BASE / "web" / "dist"       # built frontend (`npm run build` in web/)
 TRASH = ROOT / ".trash"            # deleted files wait here for TRASH_DAYS
 
@@ -24,3 +25,5 @@ MIN_FREE = 500 * 1024 ** 2             # refuse uploads below this much free spa
 SESSION_HOURS = 12
 TRASH_DAYS = 30
 LOCKOUT_TRIES, LOCKOUT_SECONDS = 5, 300
+HIDDEN_IDLE_SECONDS = 15 * 60           # hidden albums lock again after this long unused
+CODE_CHECKS, CODE_WINDOW = 10, 600      # max secret-code checks per device per window

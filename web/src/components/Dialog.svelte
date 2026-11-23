@@ -13,8 +13,13 @@
   let newName = $state('')
   let box
 
+  // `exclude`: an album being moved can't go into itself or its own sub-albums
   const shown = $derived(
-    (folders || []).filter((f) => !filter || f.toLowerCase().includes(filter.toLowerCase())),
+    (folders || []).filter(
+      (f) =>
+        (!filter || f.toLowerCase().includes(filter.toLowerCase())) &&
+        !(dialog.exclude && (f === dialog.exclude || f.startsWith(dialog.exclude + '/'))),
+    ),
   )
 
   onMount(() => {
@@ -74,7 +79,7 @@
   {#if dialog.kind === 'prompt'}
     <label class="field">
       <span class="sr-only">{dialog.title}</span>
-      <input bind:value placeholder={dialog.placeholder || ''} maxlength="120" autocomplete="off" enterkeyhint="done" />
+      <input bind:value type={dialog.password ? 'password' : 'text'} placeholder={dialog.placeholder || ''} maxlength="120" autocomplete={dialog.password ? 'new-password' : 'off'} enterkeyhint="done" />
       {#if dialog.suffix}<span class="suffix">{dialog.suffix}</span>{/if}
     </label>
   {:else if dialog.kind === 'album'}
@@ -86,11 +91,11 @@
         <div class="center"><div class="spinner"></div></div>
       {:else}
         {#if !filter}
-          <button type="button" class="album" onclick={() => done('')}><Icon name="photos" size={20} /> <span>Library (no album)</span></button>
+          <button type="button" class="album" class:current={dialog.current === ''} disabled={dialog.current === ''} onclick={() => done('')}><Icon name="photos" size={20} /> <span>{dialog.top || 'Library (no album)'}</span></button>
         {/if}
         {#each shown as f (f)}
-          <button type="button" class="album" onclick={() => done(f)} style:padding-left="{1 + (f.split('/').length - 1) * 1.1}rem">
-            <Icon name="folder" size={20} /> <span>{f.split('/').pop()}</span>
+          <button type="button" class="album" class:current={dialog.current === f} disabled={dialog.current === f} onclick={() => done(f)} style:padding-left="{1.4 + (f.split('/').length - 1) * 1.1}rem">
+            <Icon name="folder" size={20} /> <span>{f.split('/').pop()}</span>{#if dialog.current === f}<small>current</small>{/if}
           </button>
         {/each}
       {/if}
@@ -204,6 +209,14 @@
     background: none;
     text-align: left;
     cursor: pointer;
+  }
+  .album:disabled {
+    cursor: default;
+    opacity: 0.55;
+  }
+  .album small {
+    margin-left: auto;
+    color: var(--faint);
   }
   .album span {
     overflow: hidden;

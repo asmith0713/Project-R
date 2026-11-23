@@ -3,6 +3,7 @@
 
   python3 app.py setpass        # choose your secret key (once)
   python3 app.py                # start the gallery (default port 8080)
+  python3 app.py sethidden      # set or reset the secret code for hidden albums
   python3 app.py warm [--views] # pre-build the index and thumbnails (and viewer copies
                                 # of HEIC/DNG/TIFF) so browsing is instant, e.g. after rsync
 
@@ -27,6 +28,19 @@ def set_passphrase():
                                 "secret": secrets.token_hex(32)}))
     AUTH.chmod(0o600)
     print("Saved. Start the gallery with: python3 app.py")
+
+
+def set_hidden_code():
+    from gallery.store import Hidden
+    h = Hidden()
+    print("Hidden albums open when this code is typed into the gallery's search box.")
+    a = getpass.getpass("New secret code: ").strip()
+    if len(a) < 4:
+        sys.exit("Use at least 4 characters.")
+    if a != getpass.getpass("Type it again: ").strip():
+        sys.exit("The two entries didn't match.")
+    h.set_code(a)
+    print(f"Saved. {len(h.folders)} album(s) are hidden. Restart the gallery to apply.")
 
 
 def warm(views=False):
@@ -91,6 +105,8 @@ def serve():
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "setpass":
         set_passphrase()
+    elif len(sys.argv) > 1 and sys.argv[1] == "sethidden":
+        set_hidden_code()
     elif len(sys.argv) > 1 and sys.argv[1] == "warm":
         warm(views="--views" in sys.argv)
     else:

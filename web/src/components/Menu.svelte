@@ -1,14 +1,27 @@
 <script>
   import Icon from './Icon.svelte'
 
-  /** items: [{ icon, label, run, danger?, hidden? }] */
-  let { items, open = $bindable(false), label = 'More', icon = 'more', dark = false } = $props()
+  /** items: [{ icon, label, run, danger?, hidden?, disabled?, hint? }] */
+  let { items, open = $bindable(false), label = 'More', icon = 'more', dark = false, onopen } = $props()
   let root
   let list = $state()
+  let flipX = $state(false)
+  let flipY = $state(false)
 
-  function toggle() {
+  function toggle(e) {
+    e?.preventDefault()
+    e?.stopPropagation()
     open = !open
-    if (open) queueMicrotask(() => list?.querySelector('button')?.focus())
+    if (open) onopen?.()
+    if (open)
+      queueMicrotask(() => {
+        if (!list) return
+        // keep the menu on screen: flip right/left and up/down as needed
+        const r = list.getBoundingClientRect()
+        flipX = r.left < 8
+        flipY = r.bottom > innerHeight - 8 && r.top - r.height > 60
+        list.querySelector('button:not(:disabled)')?.focus()
+      })
   }
   function pick(it) {
     open = false
@@ -25,7 +38,7 @@
       root.querySelector('.icon-btn').focus()
     } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
-      const bs = [...list.querySelectorAll('button')]
+      const bs = [...list.querySelectorAll('button:not(:disabled)')]
       const i = bs.indexOf(document.activeElement)
       bs[(i + (e.key === 'ArrowDown' ? 1 : -1) + bs.length) % bs.length]?.focus()
     }
@@ -34,16 +47,17 @@
 
 <svelte:window onpointerdown={outside} onkeydowncapture={key} />
 
-<div class="wrap" bind:this={root}>
+<div class="wrap" bind:this={root} class:open>
   <button class="icon-btn" class:dark onclick={toggle} aria-label={label} aria-haspopup="menu" aria-expanded={open}>
     <Icon name={icon} />
   </button>
   {#if open}
-    <div class="menu" role="menu" bind:this={list}>
+    <div class="menu" class:flipX class:flipY role="menu" bind:this={list}>
       {#each items.filter((i) => !i.hidden) as it (it.label)}
-        <button role="menuitem" class:danger={it.danger} onclick={() => pick(it)}>
+        <button role="menuitem" class:danger={it.danger} disabled={it.disabled} onclick={() => pick(it)}>
           <Icon name={it.icon} size={20} />
           <span>{it.label}</span>
+          {#if it.hint}<small>{it.hint}</small>{/if}
         </button>
       {/each}
     </div>
@@ -85,6 +99,20 @@
     cursor: pointer;
     color: var(--text);
   }
+  .menu button:disabled {
+    cursor: default;
+    opacity: 0.5;
+  }
+  .menu button:disabled:hover {
+    background: none;
+  }
+  .menu small {
+    margin-left: auto;
+    padding-left: 0.75rem;
+    color: var(--faint);
+    font-size: 0.75rem;
+    white-space: nowrap;
+  }
   .menu button span {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -102,6 +130,15 @@
   .menu .danger,
   .menu .danger :global(svg) {
     color: var(--danger);
+  }
+  .menu.flipX {
+    right: auto;
+    left: 0;
+    transform-origin: top left;
+  }
+  .menu.flipY {
+    top: auto;
+    bottom: calc(100% + 4px);
   }
   @keyframes pop {
     from {
