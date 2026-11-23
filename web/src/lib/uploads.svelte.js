@@ -61,7 +61,9 @@ function send(u) {
         u.file = null
       } else {
         u.state = 'error'
-        u.error = msg || `Failed (${x.status})`
+        u.error =
+          msg ||
+          (x.status === 413 ? 'Too big for the internet link (100 MB limit). Upload it on home wifi.' : `Failed (${x.status})`)
       }
       resolve()
     }

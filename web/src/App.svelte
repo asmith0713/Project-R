@@ -4,6 +4,7 @@
   import { setUnauthorizedHandler } from './lib/api.js'
   import { app, favs, selection, checkSession, loadLibrary, logout, signedOut, setFavorite, deletePaths, moveTo, download, fail } from './lib/state.svelte.js'
   import { pick } from './lib/uploads.svelte.js'
+  import { startPresence } from './lib/presence.js'
   import Icon from './components/Icon.svelte'
   import Viewer from './components/Viewer.svelte'
   import Dialog from './components/Dialog.svelte'
@@ -81,6 +82,7 @@
       if (app.authed) signedOut()
     })
     checkSession()
+    startPresence()
   })
 </script>
 

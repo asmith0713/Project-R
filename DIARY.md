@@ -10,6 +10,94 @@ Newest entries go at the top. Each entry has:
 
 ---
 
+## v2.4: Free remote access with Tailscale (2026-11-24)
+
+### What
+- **Private access from anywhere:** `http://asmithpi:8080`, only for your own devices signed in to Tailscale.
+- **Public link for office computers:** `https://your-pi.your-tailnet.ts.net` (Tailscale Funnel). It opens in any browser and still needs the secret key.
+- Both cost ₹0, need no domain, and survive reboots.
+
+### How
+- Installed Tailscale from its official apt repo, signed in as host `asmithpi`, and enabled Funnel with `tailscale funnel --bg 8080`.
+- Inspected the headers Funnel forwards. It sends `X-Forwarded-For` and `X-Forwarded-Proto: https` (plus `Tailscale-User-*` for tailnet users).
+- `app.py`: waitress now uses `clear_untrusted_proxy_headers=False`. By default it stripped those headers, so the app saw neither HTTPS nor the visitor's address behind Funnel.
+- `client_ip()` now uses only the **last** `X-Forwarded-For` entry and no longer reads `CF-Connecting-IP`.
+
+### Why
+- **Tailscale over a Cloudflare named tunnel:** the user asked for free or cheap (INR). A named tunnel needs a paid domain, while Tailscale is free and gives a permanent address.
+- **Both private and public:** the private address keeps the gallery off the internet for everyday use on the phone. Funnel covers office PCs where the app can't be installed.
+- **The last `X-Forwarded-For` entry:** Funnel forwards whatever headers the visitor sends. Reading `CF-Connecting-IP` or the first `X-Forwarded-For` entry let a guesser rotate fake addresses and never get locked out. The last entry is the one our own proxy added. A live test through Funnel with faked headers was still locked out after 5 tries.
+
+### Privacy on office wifi (answered)
+- **Personal device:** traffic is encrypted. The network can see only that you connected to `ts.net`, and how much data moved.
+- **Office-managed PC:** company TLS inspection or monitoring software could see everything. Use a private window there, and rely on lock-on-close.
+- Hidden albums are never cached by the browser.
+
+### Open
+- The public link exposes the sign-in page to the internet, and the 6-character key minimum is weak for that. Set a longer key.
+- Uploads through Funnel weren't tested with very large files.
+- To turn the public link off: `sudo tailscale funnel --https=443 off` (private access keeps working).
+
+---
+
+## v2.3: Works behind Cloudflare Tunnel (2026-11-24)
+
+### What
+The gallery can be opened from outside the home through `cloudflared tunnel --url http://127.0.0.1:8080`. The first attempt used `--url localhost:80`, which failed: nothing listens on 80, and `localhost` resolved to `::1` while waitress listens on IPv4 only.
+
+### How
+- `client_ip()`: when a request comes from 127.0.0.1 or ::1 (cloudflared), take the visitor's address from `CF-Connecting-IP` / `X-Forwarded-For`. The login lockout and the hidden-code throttle use it.
+- `SessionCookies`: marks the sign-in cookie `Secure`, and HSTS is sent, when `X-Forwarded-Proto: https` comes from localhost.
+- The uploader explains Cloudflare's 413 (100 MB per request on free plans). The sign-in page no longer says "only works on your home wifi".
+
+### Why
+- **Per-visitor lockout:** through the tunnel every visitor looked like 127.0.0.1. One stranger's five wrong guesses would have locked out everyone for 5 minutes, and the hidden-code throttle would have been shared too.
+- **Forwarded headers are trusted only from localhost:** otherwise anyone on the LAN could send a fake `CF-Connecting-IP` with every guess and never be locked out.
+- **Secure only for HTTPS requests, not always on:** a `Secure` cookie would never be set on the plain-HTTP home address, breaking sign-in on wifi.
+
+### Verified
+With the test client: a stranger is locked out after 5 tries while another visitor through the tunnel still signs in, a spoofed header from a LAN address is ignored, the tunnel cookie is `Secure`, and the wifi cookie isn't and still works. The live service restarted and is healthy.
+
+### Open
+- The quick tunnel is temporary (random URL, stops with the terminal). A permanent setup would need a named tunnel (Cloudflare account) running as a systemd service.
+- Now that the sign-in page is on the internet, the 6-character minimum key length is weak. Consider a longer key, or Cloudflare Access in front.
+
+---
+
+## v2.2: Locks when the tab or browser closes (2026-11-24)
+
+### What
+- **What locks the gallery:**
+  - closing its tab or the whole browser (about 8 s later)
+  - 10 minutes without contact, for example a phone asleep or a browser killed without warning
+  - 12 hours at most
+- **What doesn't:** reloading, or closing one of several gallery tabs.
+- Old v1 thumbnails (1,560 files, 92 MB) and two indexes left over from test servers were deleted from `.cache/`.
+
+### How
+- **Server-side sessions:** login creates a random `sid` stored in the cookie and in an in-memory `active` table (created / last seen / closing). `need_login` checks it through `session_alive()`. Lock and logout delete it, so a copied cookie stops working.
+- **Goodbye beacon:** on `pagehide` the page sends `navigator.sendBeacon('/api/bye')`, which marks the sign-in as "closing". It ends after 8 s unless the page checks in through `/api/session` or `/api/ping`.
+- **Other tabs:** a `BroadcastChannel` message makes them ping 1 s and 4 s later, which cancels the goodbye.
+- **Heartbeat:** every 60 s, plus a ping when a tab becomes visible again and a re-check on bfcache restore.
+- The cookie is now a browser-session cookie (`session.permanent` was removed).
+
+### Why
+- **Server-side state was required.** Flask's default session is a signed cookie the server can't revoke, so "locked" previously only meant "the browser forgot the cookie". Now the server decides.
+- **A grace period instead of logging out on `pagehide`:** browsers fire the same event for closing, reloading and pull-to-refresh, and there's no reliable way to tell them apart. A reload checks back in within about a second, and a closed tab never does.
+- **Not `sessionStorage`, and not only a session cookie:** Chrome's "continue where you left off" and mobile tab restore bring both back, so they wouldn't actually lock anything.
+- **The idle backstop:** mobile browsers often send no event when swiped away or killed. Ten minutes keeps a long slideshow on a visible screen working (the heartbeat keeps it alive) while a forgotten phone locks soon.
+- **Kept in memory, not on disk:** simpler, and a restart signing everyone out is acceptable, even desirable, for a private gallery.
+
+### Verified
+- In headless Chromium: a reload stays signed in, closing one of two tabs leaves the other signed in, closing the last tab locks it and reopening shows the sign-in screen, Lock is immediate, and a copied cookie fails after Lock.
+- With the test client: an 11-minute idle gap gives 401, and so does a 13-hour-old sign-in.
+
+### Open
+- When a phone browser is killed, locking falls back to the 10-minute idle limit (there's no close event to catch).
+- An open tab in the background keeps the sign-in alive, as intended, since the tab is still open.
+
+---
+
 ## v2.1.1: Service waits for the pendrive (2026-11-24)
 
 ### What
@@ -130,7 +218,7 @@ Make the gallery look and feel like a modern gallery app (Google Photos-like), f
 
 ### Open
 - ~~If the pendrive isn't mounted at boot, the service serves an empty folder and uploads land on the SD card.~~ Fixed in v2.1.1.
-- The old v1 thumbnail files (~93 MB) are still in `.cache/` and unused. They're safe to delete.
+- ~~The old v1 thumbnail files (~93 MB) are still in `.cache/`.~~ Deleted in v2.2.
 - Android can't install it as a full app without HTTPS. Options for later: Tailscale HTTPS, or a local certificate.
 - The login lockout counter still resets on restart (same as v1).
 

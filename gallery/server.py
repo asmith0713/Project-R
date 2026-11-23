@@ -1,15 +1,16 @@
 """Flask app: login, JSON API, media files, and the built Svelte frontend."""
-import gzip, json, os, secrets, shutil, time
+import gzip, json, os, secrets, shutil, threading, time
 from functools import wraps
 from pathlib import Path
 from urllib.parse import quote
 
 from flask import Flask, abort, jsonify, redirect, request, send_file, session
+from flask.sessions import SecureCookieSessionInterface
 from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash
 
 from . import media
-from .config import (AUTH, CODE_CHECKS, CODE_WINDOW, CONVERT, DIST, HIDDEN_IDLE_SECONDS, IMAGES,
+from .config import (AUTH, CLOSE_GRACE, CODE_CHECKS, CODE_WINDOW, IDLE_SECONDS, CONVERT, DIST, HIDDEN_IDLE_SECONDS, IMAGES,
                      LOCKOUT_SECONDS, LOCKOUT_TRIES, MAX_UPLOAD, MIN_FREE, ROOT, SESSION_HOURS,
                      VIDEOS)
 from .library import Library
@@ -17,15 +18,47 @@ from .paths import BadPath, clean_name, kind, rel_of, resolve, unique
 from .store import Favorites, Hidden, Trash
 
 auth = json.loads(AUTH.read_text()) if AUTH.exists() else {"hash": "", "secret": secrets.token_hex(32)}
+class SessionCookies(SecureCookieSessionInterface):
+    """Mark the sign-in cookie Secure when the page came through an HTTPS tunnel. It can't be
+    always-on: the plain-HTTP home-wifi address would then never get a cookie."""
+
+    def get_cookie_secure(self, app):
+        return via_https()
+
+
 app = Flask(__name__, static_folder=None)
+app.session_interface = SessionCookies()
 app.secret_key = auth["secret"]
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Strict",
-                  PERMANENT_SESSION_LIFETIME=SESSION_HOURS * 3600,
-                  MAX_CONTENT_LENGTH=MAX_UPLOAD + 1024 ** 2)
+                  MAX_CONTENT_LENGTH=MAX_UPLOAD + 1024 ** 2)  # cookie ends with the browser session
 
 library, favorites, trash, hidden = Library(), Favorites(), Trash(), Hidden()
 fails = {}  # ip -> (wrong tries, locked until); resets on restart
 code_checks = {}  # ip -> recent secret-code check times
+
+# Server-side sign-ins, so a session can really end (the Flask cookie alone can't be revoked).
+# sid -> {"created", "seen", "closing"}; kept in memory, so a restart signs everyone out.
+active, active_lock = {}, threading.Lock()
+
+
+def session_alive(revive=False):
+    """Is this browser's sign-in still valid? It ends after SESSION_HOURS, after IDLE_SECONDS
+    without any contact, or CLOSE_GRACE seconds after its tab said goodbye. `revive` is used
+    by the page itself (load / heartbeat) to cancel a pending goodbye, e.g. after a reload."""
+    sid = session.get("sid")
+    now = time.time()
+    with active_lock:
+        s = active.get(sid)
+        if not s or not session.get("ok"):
+            return False
+        if (now - s["created"] > SESSION_HOURS * 3600 or now - s["seen"] > IDLE_SECONDS
+                or (s["closing"] and now - s["closing"] > CLOSE_GRACE)):
+            del active[sid]
+            return False
+        s["seen"] = now
+        if revive:
+            s["closing"] = 0
+        return True
 
 
 # ---------- helpers ----------
@@ -61,6 +94,23 @@ def path_arg(rel):
     return p
 
 
+def client_ip():
+    """The visitor's address. Behind a local proxy (Tailscale Funnel, Cloudflare Tunnel) every
+    request comes from 127.0.0.1, so use X-Forwarded-For then, and only then: a LAN client
+    could otherwise fake it to dodge the login lockout. Take the LAST entry, the one our own
+    proxy appended; earlier entries (and headers like CF-Connecting-IP, which Funnel passes
+    through untouched) can be written by the visitor."""
+    ip = request.remote_addr
+    if ip in ("127.0.0.1", "::1"):
+        fwd = request.headers.get("X-Forwarded-For", "").split(",")[-1].strip()
+        return fwd or ip
+    return ip
+
+
+def via_https():
+    return request.remote_addr in ("127.0.0.1", "::1") and request.headers.get("X-Forwarded-Proto") == "https"
+
+
 def body():
     return request.get_json(silent=True) or {}
 
@@ -68,7 +118,7 @@ def body():
 def need_login(f):
     @wraps(f)
     def wrap(*a, **k):
-        if not session.get("ok"):
+        if not session_alive():
             fail(401, "Sign in first")
         if request.method == "POST" and not secrets.compare_digest(
                 request.headers.get("X-CSRF", ""), session.get("csrf", "-")):
@@ -93,6 +143,8 @@ def headers(r):
     r.headers["X-Content-Type-Options"] = "nosniff"
     r.headers["Referrer-Policy"] = "no-referrer"
     r.headers.setdefault("X-Frame-Options", "DENY")
+    if via_https():  # reached through the tunnel: keep the sign-in cookie HTTPS-only
+        r.headers["Strict-Transport-Security"] = "max-age=31536000"
     if r.mimetype == "text/html":
         r.headers["Content-Security-Policy"] = (
             "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
@@ -121,21 +173,26 @@ def http_error(e):
 
 @app.get("/api/session")
 def get_session():
-    ok = bool(session.get("ok"))
+    ok = session_alive(revive=True)
+    if not ok and session.get("ok"):
+        session.clear()
     return jsonify(authed=ok, csrf=session.get("csrf") if ok else None, configured=bool(auth["hash"]))
 
 
 @app.post("/api/login")
 def login():
-    ip = request.remote_addr
+    ip = client_ip()
     n, until = fails.get(ip, (0, 0))
     if until > time.time():
         fail(429, f"Too many tries. Wait {int(until - time.time()) // 60 + 1} min.")
     if auth["hash"] and check_password_hash(auth["hash"], str(body().get("key", ""))):
         fails.pop(ip, None)
         session.clear()
-        session.update(ok=True, csrf=secrets.token_hex(16))
-        session.permanent = True
+        sid = secrets.token_hex(16)
+        with active_lock:
+            now = time.time()
+            active[sid] = {"created": now, "seen": now, "closing": 0}
+        session.update(ok=True, sid=sid, csrf=secrets.token_hex(16))
         return jsonify(ok=True, csrf=session["csrf"])
     time.sleep(0.6)
     n += 1
@@ -143,16 +200,44 @@ def login():
     fail(401, "That key didn't work.")
 
 
+def end_session():
+    with active_lock:
+        active.pop(session.get("sid"), None)
+    session.clear()
+
+
 @app.post("/api/logout")
 def logout():
-    session.clear()
+    end_session()
     return jsonify(ok=True)
 
 
 @app.get("/lock")
 def lock():  # old bookmark / plain link
-    session.clear()
+    end_session()
     return redirect("/login")
+
+
+@app.get("/api/ping")
+@need_login
+def ping():
+    """Heartbeat from an open page: keeps the sign-in alive and cancels a pending goodbye
+    (another tab of the same browser closed, or this page was reloaded)."""
+    session_alive(revive=True)
+    return jsonify(ok=True)
+
+
+@app.post("/api/bye")
+def bye():
+    """Sent with navigator.sendBeacon when a tab closes (or reloads). Beacons can't set
+    headers, so the CSRF token comes in the body. The session ends after CLOSE_GRACE
+    seconds unless the page checks back in (a reload does, a closed tab can't)."""
+    if session.get("ok") and secrets.compare_digest(request.form.get("csrf", ""), session.get("csrf", "-")):
+        with active_lock:
+            s = active.get(session.get("sid"))
+            if s:
+                s["closing"] = time.time()
+    return ("", 204)
 
 
 # ---------- browsing ----------
@@ -467,7 +552,7 @@ def unlock_hidden():
     """Called when a search is submitted. Answers 200 either way so a wrong guess looks
     like an ordinary search; checks are throttled per device to stop guessing."""
     code = str(body().get("code", "")).strip()
-    ip = request.remote_addr
+    ip = client_ip()
     now = time.time()
     recent = [t for t in code_checks.get(ip, []) if now - t < CODE_WINDOW]
     ok = False

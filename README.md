@@ -106,7 +106,7 @@ http://raspberrypi.local:8080
 
 If that doesn't load, use the Pi's IP address instead. Find it by running `hostname -I` on the Pi, then open `http://192.168.1.50:8080` (with your own number). Bookmark whichever works.
 
-Enter your secret key. Your login lasts 12 hours. Press **Lock** when you're done.
+Enter your secret key. The gallery locks itself when you close its tab or the browser (about 8 seconds later), after 10 minutes without being used (for example, a phone left asleep), or after 12 hours at most. Reloading the page doesn't lock it. You can also press **Lock** at any time. Restarting the app signs everyone out.
 
 ## Using it
 
@@ -133,6 +133,45 @@ Enter your secret key. Your login lasts 12 hours. Press **Lock** when you're don
 - **On your phone's home screen:** on iPhone, open the gallery in Safari, tap Share, then **Add to Home Screen**. It then opens full-screen like an app.
 
 Uploads never overwrite anything. If a file with the same name exists, the new one gets `_1` added to its name.
+
+## Open it away from home (Tailscale, free)
+
+The Pi is set up with [Tailscale](https://tailscale.com) (free personal plan) in two ways:
+
+| Address | Who can open it | Use it on |
+|---|---|---|
+| `http://asmithpi:8080` | Only your own devices that are signed in to the same Tailscale account. Not on the public internet at all. | Your phone or laptop, with the Tailscale app installed and switched on |
+| `https://your-pi.your-tailnet.ts.net` | Anyone who has the address (they still need the secret key) | Computers where you can't install apps, like an office PC |
+
+Both keep working after reboots. Useful commands on the Pi:
+
+```
+tailscale status                         # is the Pi connected?
+sudo tailscale funnel status             # is the public address on?
+sudo tailscale funnel --bg 8080          # turn the public address on
+sudo tailscale funnel --https=443 off    # turn the public address off (the private one keeps working)
+```
+
+### Is it private on office wifi?
+- **Your own phone or laptop:** the connection is encrypted. Other people on the wifi, and the office network, can at most see that you connected to a `ts.net` address and how much data moved. They can't see photos, album names or your key.
+- **An office-managed computer:** many companies can decrypt HTTPS on their own machines and run monitoring software, so assume IT could see everything you open there. If you have to use one, use a private/incognito window. The gallery locks when you close it. Hidden albums are never stored in the browser cache.
+- **Prefer the private address on your own phone.** With it, the gallery isn't reachable from the internet at all.
+
+## Open it away from home (Cloudflare Tunnel, alternative)
+
+Cloudflare Tunnel gives the gallery an `https://` address that works from anywhere, without opening ports on your router. Run this on the Pi:
+
+```
+cloudflared tunnel --url http://127.0.0.1:8080
+```
+
+Use `127.0.0.1:8080` exactly. The gallery isn't on port 80, and plain `localhost` may point to an address the gallery doesn't listen on. Open the `https://….trycloudflare.com` address it prints.
+
+Things to know:
+- **Anyone on the internet can now reach the sign-in page.** This is also true of the public Tailscale address. Use a long secret key (rerun `python3 app.py setpass` if yours is short). Wrong guesses still lock out the device that made them, not you.
+- **A quick tunnel gets a new random address every time you start it**, and stops when you close the terminal. A permanent address needs a free Cloudflare account and a named tunnel.
+- **Uploads through the tunnel are limited to 100 MB per file** (a Cloudflare limit). Upload bigger videos on home wifi.
+- Through the tunnel the connection is encrypted. On Android, the gallery can then be installed from Chrome's menu as a real app.
 
 ## Make it start automatically
 
@@ -213,7 +252,7 @@ Find the right `.mount` name with `systemd-escape -p --suffix=mount /mnt/pendriv
 ## Privacy and safety
 
 - Nothing is shown until the key is entered, and five wrong tries lock that device out for five minutes.
-- On plain wifi, the key and photos travel unencrypted. That's fine at home. Don't open the port to the internet.
+- On plain wifi, the key and photos travel unencrypted. That's fine at home. Don't open the port on your router. To reach the gallery from outside, use the Cloudflare Tunnel above, which is encrypted.
 - Anyone who can log in to the Pi itself, or take out its memory card, can read the photos. Set a password on the Pi.
 - Your browser history keeps the address. Use a private window if that matters.
 - The lockout counter resets if the app restarts.

@@ -96,8 +96,12 @@ def serve():
     print(f"Gallery running on port {PORT}, photos from {ROOT}")
     try:
         from waitress import serve as waitress_serve
+        # clear_untrusted_proxy_headers=False: let X-Forwarded-* from a local proxy (Tailscale
+        # Funnel, cloudflared) reach the app; server.client_ip()/via_https() only trust them
+        # when the request really comes from 127.0.0.1.
         waitress_serve(app, host="0.0.0.0", port=PORT, threads=8,
-                       max_request_body_size=2200 * 1024 * 1024)
+                       max_request_body_size=2200 * 1024 * 1024,
+                       clear_untrusted_proxy_headers=False)
     except ImportError:
         app.run(host="0.0.0.0", port=PORT, threaded=True)
 

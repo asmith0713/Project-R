@@ -45,7 +45,7 @@
       </button>
     {/if}
   </form>
-  <p class="foot">Only works on your home wifi · Signs out after 12 hours</p>
+  <p class="foot">Private · Locks when you close the tab</p>
 </main>
 
 <style>
