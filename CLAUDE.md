@@ -90,22 +90,27 @@ GALLERY_AUTH=/tmp/x/auth.json GALLERY_FAVORITES=/tmp/x/fav.json GALLERY_HIDDEN=/
 
 ## Production deployment (this Pi)
 
-The app runs as the systemd unit `/etc/systemd/system/gallery.service` (enabled at boot):
+The app runs as the systemd unit `/etc/systemd/system/gallery.service` (enabled at boot). The previous version is backed up as `gallery.service.bak-2026-11-24`.
 
 ```
+[Unit]
+After=network-online.target mnt-pendrive.mount
+Wants=network-online.target mnt-pendrive.mount
+
 [Service]
 User=asmithreddy
 WorkingDirectory=/home/asmithreddy/projects/youDontWannaSeeThis/private-gallery
 Environment="PHOTO_DIR=/mnt/pendrive"
+ExecStartPre=/usr/bin/mountpoint -q /mnt/pendrive
 ExecStart=/home/asmithreddy/projects/youDontWannaSeeThis/private-gallery/venv/bin/python app.py
 Restart=on-failure
-RestartSec=5s
+RestartSec=10s
 ```
 
 - It runs straight from this working copy, so a deploy is `cd web && npm run build`, then `sudo systemctl restart gallery`. Frontend-only changes need just the build, because `index.html` is served `no-cache`. Logs: `journalctl -u gallery -f`.
 - **Photos are on a USB pendrive**: `/dev/sda1` (exFAT, 58 GB) at `/mnt/pendrive`, mounted from `/etc/fstab` with `uid=1000,gid=1000,umask=000,nofail`. exFAT has no Unix permissions or symlinks and treats names case-insensitively. Upload free-space checks measure the pendrive, and `.trash/` lives on it too.
 - `.auth.json`, `.favorites.json` and `.cache/` stay on the SD card in this directory.
-- Because of `nofail` and the missing `RequiresMountsFor=/mnt/pendrive`, if the drive isn't mounted at boot the service serves the empty mountpoint and uploads land on the SD card.
+- **Mount guard:** fstab mounts the drive with `nofail`, so boot continues without it. The unit pulls in `mnt-pendrive.mount`, and `ExecStartPre=mountpoint -q` refuses to start while it isn't mounted. `Restart=on-failure` retries every 10 s, and each retry re-attempts the mount, so the gallery comes up by itself when the drive appears and never serves the empty SD-card mountpoint. Don't replace this with `RequiresMountsFor=`/`Requires=`: a failed mount then counts as a dependency failure, which systemd never retries.
 - Node 20, ffmpeg and `rawpy` are installed. Rebuild `web/dist` on the Pi after changing anything in `web/`.
 
 ## Repo notes

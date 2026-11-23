@@ -197,6 +197,19 @@ PHOTO_DIR="/path/to/photos" PORT=9000 python3 app.py
 
 For the service, add `Environment="PHOTO_DIR=/path/to/photos"` under `[Service]`.
 
+If that folder is a USB drive, also make the service wait for it, so it never shows an empty gallery or saves uploads to the memory card when the drive isn't plugged in. Add these lines, using your drive's folder:
+
+```
+[Unit]
+After=network-online.target mnt-pendrive.mount
+Wants=network-online.target mnt-pendrive.mount
+
+[Service]
+ExecStartPre=/usr/bin/mountpoint -q /mnt/pendrive
+```
+
+Find the right `.mount` name with `systemd-escape -p --suffix=mount /mnt/pendrive`. Without the drive, the gallery then simply waits, trying again every few seconds, and starts by itself once the drive is there.
+
 ## Privacy and safety
 
 - Nothing is shown until the key is entered, and five wrong tries lock that device out for five minutes.

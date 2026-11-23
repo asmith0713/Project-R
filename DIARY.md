@@ -10,6 +10,30 @@ Newest entries go at the top. Each entry has:
 
 ---
 
+## v2.1.1: Service waits for the pendrive (2026-11-24)
+
+### What
+The gallery no longer starts when the USB pendrive isn't mounted. It keeps retrying every 10 seconds and starts as soon as the drive is there.
+
+### How
+In `/etc/systemd/system/gallery.service` (the old version is backed up as `gallery.service.bak-2026-11-24`):
+- `Wants=` and `After=mnt-pendrive.mount` pull in the fstab mount and order the start after it.
+- `ExecStartPre=/usr/bin/mountpoint -q /mnt/pendrive` refuses to start unless the drive is really mounted.
+- `Restart=on-failure` retries, now every 10 s instead of 5, to keep the logs quieter while the drive is missing. Each retry re-attempts the mount.
+
+### Why
+- fstab uses `nofail` (so the Pi still boots without the drive), and the old unit didn't care whether the drive was mounted. Without the drive, the gallery served the empty `/mnt/pendrive` folder on the SD card, and uploads were written there.
+- **Why not `RequiresMountsFor=`:** with a hard dependency, a failed mount marks the start as a "dependency" failure, and systemd never retries those, so the gallery would stay down until someone restarted it. The `mountpoint` check makes it a normal failure that `Restart=` keeps retrying.
+
+### Verified
+- `systemd-analyze verify` passes, the live service restarted and is healthy, and the mount appears in its `After=`/`Wants=`.
+- A temporary test unit with the same guard on a folder that isn't a mount was refused (exit 32) and kept being retried.
+
+### Open
+- If the drive is unplugged while the gallery is running, it isn't detected (the files just fail to load). A real-world unplug or replug test hasn't been done.
+
+---
+
 ## v2.1: Hidden albums, search, full album menu (2026-11-24, `41ca19f`)
 
 ### What
@@ -105,7 +129,7 @@ Make the gallery look and feel like a modern gallery app (Google Photos-like), f
 - Deploy: `cd web && npm run build`, then `sudo systemctl restart gallery` (the restart is only needed for Python changes).
 
 ### Open
-- If the pendrive isn't mounted at boot, the service serves an empty folder and uploads land on the SD card (`nofail` in fstab, and no `RequiresMountsFor=` in the unit). It's a one-line fix in the unit that hasn't been applied yet.
+- ~~If the pendrive isn't mounted at boot, the service serves an empty folder and uploads land on the SD card.~~ Fixed in v2.1.1.
 - The old v1 thumbnail files (~93 MB) are still in `.cache/` and unused. They're safe to delete.
 - Android can't install it as a full app without HTTPS. Options for later: Tailscale HTTPS, or a local certificate.
 - The login lockout counter still resets on restart (same as v1).
